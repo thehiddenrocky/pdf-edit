@@ -90,14 +90,29 @@ def main():
                     process_rect(wide_rect, None) # No replacement text
 
                 # --- 5. Bottom Section (Signature) ---
+                sig_img_rect = None
                 for inst in page.search_for("Himanshu Raj"):
                     if inst.y0 > 750: # The signature is around y=767
                         process_rect(inst, "Mary Garg", wipe_x1=inst.x1 + 50, fontname="Helvetica-Oblique")
+                        # The image is right above this text. We'll define a rectangle for the image.
+                        # Original image bbox was roughly: Rect(404, 683, 524, 756)
+                        sig_img_rect = fitz.Rect(400, inst.y0 - 80, inst.x1 + 50, inst.y0 - 5)
+
+                # Redact the old signature image area
+                if sig_img_rect:
+                    page.add_redact_annot(sig_img_rect, fill=(1, 1, 1))
 
                 # Apply Redactions
-                if redacted_areas:
+                if redacted_areas or sig_img_rect:
                     page.apply_redactions()
                     
+                # Insert the new signature image
+                if sig_img_rect and os.path.exists("mary-sign.jpg"):
+                    # Adjust the rect slightly to match the aspect ratio of the new image
+                    # The provided image looks wider than it is tall. Let's make a reasonable box.
+                    insert_rect = fitz.Rect(sig_img_rect.x0, sig_img_rect.y0 + 20, sig_img_rect.x1, sig_img_rect.y1)
+                    page.insert_image(insert_rect, filename="mary-sign.jpg")
+
                 # Apply Text Insertions
                 for rect, text, fontname in replacements:
                     page.insert_text((rect.x0, rect.y1 - 2), text, fontsize=11, fontname=fontname, color=(0, 0, 0))
