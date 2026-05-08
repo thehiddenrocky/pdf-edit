@@ -35,7 +35,7 @@ def main():
                 redacted_areas = []
 
                 # Redact and Replace function
-                def process_rect(rect, new_text=None, wipe_x1=None):
+                def process_rect(rect, new_text=None, wipe_x1=None, fontname="helv"):
                     # wipe_x1 allows us to extend the redaction to the right
                     rx1 = wipe_x1 if wipe_x1 else rect.x1
                     redact_rect = fitz.Rect(rect.x0, rect.y0, rx1, rect.y1)
@@ -44,7 +44,7 @@ def main():
                     redacted_areas.append(redact_rect)
                     
                     if new_text:
-                        replacements.append((rect, new_text))
+                        replacements.append((rect, new_text, fontname))
 
                 # --- 1. Top Section (Sender Name & Address) ---
                 # Find the exact title bounding box (usually top left)
@@ -92,15 +92,15 @@ def main():
                 # --- 5. Bottom Section (Signature) ---
                 for inst in page.search_for("Himanshu Raj"):
                     if inst.y0 > 750: # The signature is around y=767
-                        process_rect(inst, "Mary Garg", wipe_x1=inst.x1 + 50)
+                        process_rect(inst, "Mary Garg", wipe_x1=inst.x1 + 50, fontname="Helvetica-Oblique")
 
                 # Apply Redactions
                 if redacted_areas:
                     page.apply_redactions()
                     
                 # Apply Text Insertions
-                for rect, text in replacements:
-                    page.insert_text((rect.x0, rect.y1 - 2), text, fontsize=11, fontname="helv", color=(0, 0, 0))
+                for rect, text, fontname in replacements:
+                    page.insert_text((rect.x0, rect.y1 - 2), text, fontsize=11, fontname=fontname, color=(0, 0, 0))
             
             # Generate the new filename and save
             new_filename = filename.replace("Himanshu", "Mary_Garg")
