@@ -34,55 +34,76 @@ def main():
                 replacements = []
                 redact_only = []
                 
-                # 1. Replace HIMANSHU with MARY GARG
-                for inst in page.search_for("HIMANSHU"):
-                    replacements.append((inst, "MARY GARG"))
+                # 1. Name & Address
+                for inst in page.search_for("HIMANSHU RAJ"):
                     page.add_redact_annot(inst, fill=(1, 1, 1))
-                    
-                # 2. Replace Himanshu with Mary Garg
-                for inst in page.search_for("Himanshu"):
-                    if not any(abs(inst.x0 - r[0].x0) < 1 and abs(inst.y0 - r[0].y0) < 1 for r in replacements):
-                        replacements.append((inst, "Mary Garg"))
+                    replacements.append((inst, "MARY GARG"))
+                
+                # If they were separate (fallback)
+                for inst in page.search_for("HIMANSHU"):
+                    if not any(inst.intersects(r[0]) for r in replacements):
                         page.add_redact_annot(inst, fill=(1, 1, 1))
-
-                # 3. Remove RAJ
+                        replacements.append((inst, "MARY GARG"))
+                
                 for inst in page.search_for("RAJ"):
-                    redact_only.append(inst)
                     page.add_redact_annot(inst, fill=(1, 1, 1))
                 for inst in page.search_for("Raj"):
-                    redact_only.append(inst)
                     page.add_redact_annot(inst, fill=(1, 1, 1))
 
-                # 4. Update Account Name to RIVERA MARY
-                # Note: "Account Name: Himanshu Raj" will become "Account Name: Mary Garg" 
-                # from the previous steps. So we search for "Mary Garg" on the Account Name line 
-                # or just look for "Account Name:" and replace the whole thing.
-                # It's cleaner to just redact the whole line and rewrite it.
-                for inst in page.search_for("Account Name:"):
-                    # Find the bounding box for the entire line
-                    rect = fitz.Rect(inst.x0, inst.y0, page.rect.width, inst.y1)
-                    redact_only.append(rect)
-                    page.add_redact_annot(rect, fill=(1, 1, 1))
-                    replacements.append((inst, "Account Name: RIVERA MARY"))
+                # Address lines
+                for inst in page.search_for("E-56, Saket, South Delhi"):
+                    page.add_redact_annot(inst, fill=(1, 1, 1))
+                    replacements.append((inst, "vernerintie 6a"))
+                for inst in page.search_for("Delhi-110017"):
+                    page.add_redact_annot(inst, fill=(1, 1, 1))
+                    replacements.append((inst, "02430 finland"))
 
-                # 5. Update Account Number
+                # 2. Invoice Date
+                for inst in page.search_for("Invoice Date:"):
+                    # Redact the part after "Invoice Date: "
+                    rect = fitz.Rect(inst.x1, inst.y0, page.rect.width, inst.y1)
+                    page.add_redact_annot(rect, fill=(1, 1, 1))
+                    replacements.append((fitz.Rect(inst.x1 + 2, inst.y0, inst.x1 + 100, inst.y1), "30/04/2026"))
+
+                # 3. Table Adjustments (Total €200)
+                # Hours: 28 -> 13.33
+                for inst in page.search_for("28"):
+                    # Ensure we're in the Hrs column (approximate x location)
+                    if 350 < inst.x0 < 450:
+                        page.add_redact_annot(inst, fill=(1, 1, 1))
+                        replacements.append((inst, "13.33"))
+
+                # Amounts: €420.00 -> €200.00
+                for inst in page.search_for("€420.00"):
+                    page.add_redact_annot(inst, fill=(1, 1, 1))
+                    replacements.append((inst, "€200.00"))
+
+                # 4. Account Details
+                for inst in page.search_for("Account Name:"):
+                    rect = fitz.Rect(inst.x0, inst.y0, page.rect.width, inst.y1)
+                    page.add_redact_annot(rect, fill=(1, 1, 1))
+                    replacements.append((inst, "Account Name: RIVERA MARY GARG"))
+
                 for inst in page.search_for("Account Number:"):
                     rect = fitz.Rect(inst.x0, inst.y0, page.rect.width, inst.y1)
-                    redact_only.append(rect)
                     page.add_redact_annot(rect, fill=(1, 1, 1))
                     replacements.append((inst, "Account Number: FI71 1432 3500 3648 49"))
 
-                # 6. Remove IFSC Code
                 for inst in page.search_for("IFSC Code:"):
                     rect = fitz.Rect(inst.x0, inst.y0, page.rect.width, inst.y1)
-                    redact_only.append(rect)
                     page.add_redact_annot(rect, fill=(1, 1, 1))
 
-                if replacements or redact_only:
+                # Final Name at bottom
+                for inst in page.search_for("Himanshu Raj"):
+                    if inst.y0 > 500: # Bottom signature area
+                        page.add_redact_annot(inst, fill=(1, 1, 1))
+                        replacements.append((inst, "Mary Garg"))
+
+                if replacements:
                     page.apply_redactions()
-                    for inst, text in replacements:
-                        # Insert new text, positioning slightly above the bottom of the bounding box
-                        page.insert_text((inst.x0, inst.y1 - 2), text, fontsize=11, fontname="helv", color=(0, 0, 0))
+                    for rect, text in replacements:
+                        # Insert text at the rect's location
+                        page.insert_text((rect.x0, rect.y1 - 2), text, fontsize=10, fontname="helv", color=(0, 0, 0))
             
             # Generate the new filename and save
             new_filename = filename.replace("Himanshu", "Mary_Garg")
