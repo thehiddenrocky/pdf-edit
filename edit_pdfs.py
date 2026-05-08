@@ -31,79 +31,76 @@ def main():
         try:
             doc = fitz.open(original_path)
             for page in doc:
-                replacements = []
-                redact_only = []
-                
-                # 1. Name & Address
+                replacements = [] # List of (rect, text)
+                redacted_areas = []
+
+                # Redact and Replace function
+                def process_rect(rect, new_text=None, wipe_x1=None):
+                    # wipe_x1 allows us to extend the redaction to the right
+                    rx1 = wipe_x1 if wipe_x1 else rect.x1
+                    redact_rect = fitz.Rect(rect.x0, rect.y0, rx1, rect.y1)
+                        
+                    page.add_redact_annot(redact_rect, fill=(1, 1, 1))
+                    redacted_areas.append(redact_rect)
+                    
+                    if new_text:
+                        replacements.append((rect, new_text))
+
+                # --- 1. Top Section (Sender Name & Address) ---
+                # Find the exact title bounding box (usually top left)
                 for inst in page.search_for("HIMANSHU RAJ"):
-                    page.add_redact_annot(inst, fill=(1, 1, 1))
-                    replacements.append((inst, "MARY GARG"))
-                
-                # If they were separate (fallback)
-                for inst in page.search_for("HIMANSHU"):
-                    if not any(inst.intersects(r[0]) for r in replacements):
-                        page.add_redact_annot(inst, fill=(1, 1, 1))
-                        replacements.append((inst, "MARY GARG"))
-                
-                for inst in page.search_for("RAJ"):
-                    page.add_redact_annot(inst, fill=(1, 1, 1))
-                for inst in page.search_for("Raj"):
-                    page.add_redact_annot(inst, fill=(1, 1, 1))
-
-                # Address lines
+                    if inst.y0 < 300: # Ensure it's the top header
+                        process_rect(inst, "MARY GARG", wipe_x1=inst.x1 + 50)
+                    
                 for inst in page.search_for("E-56, Saket, South Delhi"):
-                    page.add_redact_annot(inst, fill=(1, 1, 1))
-                    replacements.append((inst, "vernerintie 6a"))
+                    process_rect(inst, "vernerintie 6a", wipe_x1=inst.x1 + 50)
                 for inst in page.search_for("Delhi-110017"):
-                    page.add_redact_annot(inst, fill=(1, 1, 1))
-                    replacements.append((inst, "02430 finland"))
+                    process_rect(inst, "02430 finland", wipe_x1=inst.x1 + 50)
 
-                # 2. Invoice Date
+                # --- 2. Invoice Details Section ---
                 for inst in page.search_for("Invoice Date:"):
-                    # Redact the part after "Invoice Date: "
-                    rect = fitz.Rect(inst.x1, inst.y0, page.rect.width, inst.y1)
-                    page.add_redact_annot(rect, fill=(1, 1, 1))
-                    replacements.append((fitz.Rect(inst.x1 + 2, inst.y0, inst.x1 + 100, inst.y1), "30/04/2026"))
+                    date_rect = fitz.Rect(inst.x1 + 2, inst.y0, inst.x1 + 100, inst.y1)
+                    process_rect(date_rect, "30/04/2026")
 
-                # 3. Table Adjustments (Total €200)
-                # Hours: 28 -> 13.33
+                # --- 3. Table Adjustments ---
                 for inst in page.search_for("28"):
-                    # Ensure we're in the Hrs column (approximate x location)
-                    if 350 < inst.x0 < 450:
-                        page.add_redact_annot(inst, fill=(1, 1, 1))
-                        replacements.append((inst, "13.33"))
-
-                # Amounts: €420.00 -> €200.00
+                    if 350 < inst.x0 < 450: # Hrs column
+                        process_rect(inst, "13.33")
                 for inst in page.search_for("€420.00"):
-                    page.add_redact_annot(inst, fill=(1, 1, 1))
-                    replacements.append((inst, "€200.00"))
+                    process_rect(inst, "€200.00")
 
-                # 4. Account Details
-                for inst in page.search_for("Account Name:"):
-                    rect = fitz.Rect(inst.x0, inst.y0, page.rect.width, inst.y1)
-                    page.add_redact_annot(rect, fill=(1, 1, 1))
-                    replacements.append((inst, "Account Name: RIVERA MARY GARG"))
+                # --- 4. Payment Details Section (This is where the bug was) ---
+                # First, find exactly where "Account Name:" is.
+                acc_name_rects = page.search_for("Account Name:")
+                for inst in acc_name_rects:
+                    # Wipe the ENTIRE line starting from "Account Name:" to the edge of the page
+                    wide_rect = fitz.Rect(inst.x0, inst.y0 - 2, page.rect.width, inst.y1 + 2)
+                    process_rect(wide_rect, "Account Name: RIVERA MARY GARG")
+                    
+                # Do the same for Account Number
+                acc_num_rects = page.search_for("Account Number:")
+                for inst in acc_num_rects:
+                    wide_rect = fitz.Rect(inst.x0, inst.y0 - 2, page.rect.width, inst.y1 + 2)
+                    process_rect(wide_rect, "Account Number: FI71 1432 3500 3648 49")
+                    
+                # Completely wipe IFSC Code
+                ifsc_rects = page.search_for("IFSC Code:")
+                for inst in ifsc_rects:
+                    wide_rect = fitz.Rect(inst.x0, inst.y0 - 2, page.rect.width, inst.y1 + 2)
+                    process_rect(wide_rect, None) # No replacement text
 
-                for inst in page.search_for("Account Number:"):
-                    rect = fitz.Rect(inst.x0, inst.y0, page.rect.width, inst.y1)
-                    page.add_redact_annot(rect, fill=(1, 1, 1))
-                    replacements.append((inst, "Account Number: FI71 1432 3500 3648 49"))
-
-                for inst in page.search_for("IFSC Code:"):
-                    rect = fitz.Rect(inst.x0, inst.y0, page.rect.width, inst.y1)
-                    page.add_redact_annot(rect, fill=(1, 1, 1))
-
-                # Final Name at bottom
+                # --- 5. Bottom Section (Signature) ---
                 for inst in page.search_for("Himanshu Raj"):
-                    if inst.y0 > 500: # Bottom signature area
-                        page.add_redact_annot(inst, fill=(1, 1, 1))
-                        replacements.append((inst, "Mary Garg"))
+                    if inst.y0 > 750: # The signature is around y=767
+                        process_rect(inst, "Mary Garg", wipe_x1=inst.x1 + 50)
 
-                if replacements:
+                # Apply Redactions
+                if redacted_areas:
                     page.apply_redactions()
-                    for rect, text in replacements:
-                        # Insert text at the rect's location
-                        page.insert_text((rect.x0, rect.y1 - 2), text, fontsize=10, fontname="helv", color=(0, 0, 0))
+                    
+                # Apply Text Insertions
+                for rect, text in replacements:
+                    page.insert_text((rect.x0, rect.y1 - 2), text, fontsize=11, fontname="helv", color=(0, 0, 0))
             
             # Generate the new filename and save
             new_filename = filename.replace("Himanshu", "Mary_Garg")
