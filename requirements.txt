@@ -1,0 +1,5 @@
+docx2pdf==0.1.8
+PyMuPDF==1.27.2.3
+appscript==1.4.0
+lxml==6.1.0
+tqdm==4.67.3
