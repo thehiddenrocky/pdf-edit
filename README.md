@@ -1,12 +1,17 @@
-# Sprint Files - PDF Tools
+# PDF Edit - Automated Invoice Tool
 
-This folder contains scripts for converting DOCX files to PDF and performing specific edits on PDF resumes.
+A Python-based utility to programmatically update PDF invoices, handling text replacement, financial calculations, and signature image swapping with high precision.
+
+## Project Goal
+Transform a "template" PDF invoice by updating:
+- Sender details (Name, Address)
+- Dates and Financial figures (Sub-total, Hours)
+- Bank Account details (IBAN, Swift, etc.)
+- Signatures (Replacing both text and image components)
 
 ## Prerequisites
-
-- **macOS**: These scripts utilize AppleScript and Microsoft Word for high-fidelity conversion.
-- **Microsoft Word**: Must be installed for `docx2pdf` to function.
-- **Python 3.14+**: The environment used during development.
+- **Python 3.14+**
+- **PyMuPDF (fitz)**: For PDF manipulation.
 
 ## Setup Instructions
 
@@ -23,19 +28,41 @@ This folder contains scripts for converting DOCX files to PDF and performing spe
 
 ## Usage
 
-### 1. Convert all DOCX to PDF
-Run the conversion script to turn all `.docx` files in this directory into PDFs:
+### 1. Process Invoices
+Place the source PDF in the root directory and run:
 ```bash
-python venv/scripts/convert.py
+python edit_pdfs.py
 ```
+- Original files are moved to `original/`.
+- Edited files are saved in `new/`.
 
-### 2. Update CV (Mayank CV 2026)
-To apply the specific date changes to Mayank's CV:
-```bash
-python venv/scripts/modify_pdf.py
-```
+### 2. Debugging Tools
+- `python debug_rects.py`: Visualizes bounding boxes for all text to help with targeting.
+- `python debug_images.py`: Identifies image `xref` IDs and positions.
+- `python font_test.py`: Verifies if specific PDF fonts (like italics) are rendering correctly.
 
-## Troubleshooting
+## Methodology & Learnings
 
-- **Permissions**: If macOS blocks AppleScript execution, you may need to grant "Accessibility" or "Automation" permissions to your Terminal/IDE in `System Settings > Privacy & Security`.
-- **Word Dialogs**: Ensure Microsoft Word is not stuck on a "Welcome" or "Update" dialog, as this will block the background conversion process.
+### 1. The Redaction Workflow
+PyMuPDF requires a two-step process to "edit" PDFs:
+1. **Marking**: Use `page.add_redact_annot(rect, fill=(1,1,1))` to draw white rectangles over old content.
+2. **Applying**: Call `page.apply_redactions()` once per page.
+3. **Inserting**: Use `page.insert_text()` *after* applying redactions to ensure the new text is rendered on top of the clean background.
+
+### 2. Coordinate-Based Targeting
+When a string (like a name) appears in multiple places (Header and Signature), simple text search isn't enough.
+- **Vertical Filtering**: Use `y0` coordinates to distinguish sections (e.g., Header < 300px, Body 300-750px, Signature > 750px).
+- **Horizontal Filtering**: Target specific columns (like the 'Hrs' column) by restricting the `x0` range.
+
+### 3. Native Font Handling
+To avoid "font file not found" errors, use the **Base-14 PDF fonts** natively understood by PyMuPDF.
+- Use `fontname="helv"` for standard text.
+- Use `fontname="Helvetica-Oblique"` for italicized signatures.
+- No external `.ttf` or `.otf` files are required for these standard faces.
+
+### 4. Relative Image Placement
+To replace an image signature dynamically:
+1. Search for the text signature marker (e.g., "Mary Garg").
+2. Calculate a rectangle relative to that text (e.g., `y0 - 80` to `y0 - 5`).
+3. Apply a redaction to clear the old image.
+4. Insert the new image (`page.insert_image()`) into that relative box, adjusting for aspect ratio if necessary.
