@@ -1,17 +1,21 @@
 # PDF Edit - Automated Invoice Tool
 
-A Python-based utility to programmatically update PDF invoices, handling text replacement, financial calculations, and signature image swapping with high precision.
+A Python-based utility and AI Agent to programmatically update PDF invoices, handling text replacement, financial calculations, and signature image swapping with high precision.
 
-## Project Goal
-Transform a "template" PDF invoice by updating:
-- Sender details (Name, Address)
-- Dates and Financial figures (Sub-total, Hours)
-- Bank Account details (IBAN, Swift, etc.)
-- Signatures (Replacing both text and image components)
+## 🚀 New: PDF AI Agent
+The project now includes an LLM-powered agent that can interpret natural language instructions to edit PDFs.
+
+### Usage
+```bash
+source venv/bin/activate
+python main.py "change the date to 15 August 2026" "original/invoice.pdf"
+```
+For detailed implementation notes, troubleshooting, and advanced usage, see the [**PDF Agent Guide**](docs/AGENT_GUIDE.md).
 
 ## Prerequisites
 - **Python 3.14+**
-- **PyMuPDF (fitz)**: For PDF manipulation.
+- **Stirling-PDF**: Required for the AI Agent (running locally at `http://localhost:5001`).
+- **Google Gemini API Key**: Set in a `.env` file as `GEMINI_API_KEY`.
 
 ## Setup Instructions
 
