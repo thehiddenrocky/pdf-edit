@@ -3,3 +3,6 @@ PyMuPDF==1.27.2.3
 appscript==1.4.0
 lxml==6.1.0
 tqdm==4.67.3
+google-genai
+requests
+python-dotenv
