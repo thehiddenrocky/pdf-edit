@@ -4,10 +4,12 @@ This document summarizes the development journey of the PDF Editing Agent, the c
 
 ## Technical Issues & Troubleshooting
 
-### 1. SDK Migration (google-generativeai to google-genai)
-- **Issue**: The original project used the older `google-generativeai` package, which had compatibility issues with the latest Python environment and lacked some modern feature support.
-- **Troubleshooting**: Identified that `google-genai` is the official modern SDK. 
-- **Resolution**: Updated `requirements.txt` and refactored `agent.py` to use the `genai.Client` and `client.chats.create` methods. This improved tool-calling reliability and state management.
+### 1. SDK Migration (Gemini to local Gemma via Ollama)
+- **Issue**: The project originally used the `google-genai` SDK, which required a cloud API key and internet connectivity.
+- **Resolution**: Migrated to the `ollama` Python library to run the agent using a local **Gemma** model. This involved:
+    - Implementing a manual ReAct loop to handle tool calling (which Gemini's SDK handled internally).
+    - Mapping tool definitions to the JSON format expected by Ollama's `chat` API.
+    - Setting the `MODEL_NAME` to `gemma` in `agent.py`.
 
 ### 2. Stirling-PDF API Schema Fixes (422 Errors)
 - **Issue**: Calls to the Stirling-PDF Orchestrator returned `422 Unprocessable Entity`.
@@ -35,10 +37,8 @@ This document summarizes the development journey of the PDF Editing Agent, the c
 ## How to Use the Agent
 
 ### Prerequisites
-1. **API Key**: Ensure you have a `.env` file in the root directory with:
-   ```env
-   GEMINI_API_KEY=your_google_ai_studio_key_here
-   ```
+1. **Ollama**: Ensure Ollama is installed and running locally.
+   - Pull the model: `ollama pull gemma`
 2. **Stirling-PDF**: Ensure Stirling-PDF is running locally (default: `http://localhost:5001`).
 3. **Environment**: Use the provided virtual environment.
    ```bash
