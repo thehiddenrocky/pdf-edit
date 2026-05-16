@@ -6,4 +6,5 @@ tqdm==4.67.3
 google-genai
 requests
 python-dotenv
-ollama
+llama-cpp-python
+huggingface-hub
