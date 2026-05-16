@@ -26,6 +26,14 @@ The core goal is to eliminate all external system requirements (Docker, Ollama b
 3.  **Agent Update:** Modify `agent.py` to instantiate `Llama()` with `n_gpu_layers=-1` (for full Metal offloading). Replace `ollama.chat()` with `llm.create_chat_completion()`. 
 4.  *Test:* Verify the CLI script still works natively without Ollama running.
 
+> **Technical Note: Resolving the Tool "Amnesia Loop"**
+> During implementation, an infinite loop was discovered where the model repeatedly calls the same tool.
+> * **Root Cause:** The `chatml-function-calling` chat template built into `llama-cpp-python` explicitly ignores messages with `role: "tool"`. The LLM never sees the tool output, assumes the tool hasn't been executed, and therefore requests the same tool call again indefinitely.
+> * **Proposed Solutions:**
+>   1. **Fake the Role (Recommended/Easiest):** Append the tool's output as a `role: "user"` message (e.g., `{"role": "user", "content": "Tool Response: {...}"}`) so the existing template successfully renders it into the LLM's context window.
+>   2. **Monkey-Patch the Template:** Inject a custom Jinja template via `llama_chat_format.Jinja2ChatFormatter` during the `Llama` initialization that properly handles `{% if message.role == 'tool' %}`.
+>   3. **Change Chat Format:** Evaluate if a different built-in template natively supports tool roles for Gemma 2.
+
 ### Phase 2: PDF Engine Refactor (Moving away from Stirling-PDF)
 **Goal:** Eliminate the need for Docker and the Stirling-PDF backend.
 1.  **Audit Tools:** Review `apply_pdf_edits` in `tools.py`.
