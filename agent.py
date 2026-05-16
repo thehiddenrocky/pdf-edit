@@ -1,7 +1,14 @@
 import os
 from dotenv import load_dotenv
 import ollama
-from tools import get_pdf_metadata, apply_pdf_edits, replace_text_in_pdf
+from tools import (
+    get_pdf_metadata, 
+    replace_text_in_pdf, 
+    merge_pdfs, 
+    split_pdf, 
+    rotate_pdf_pages, 
+    remove_pdf_pages
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -23,7 +30,7 @@ def run_agent(prompt: str, filepath: str) -> str:
                 "1. You CANNOT change text without knowing the exact existing text currently in the PDF.\n"
                 "2. You MUST use 'get_pdf_metadata' FIRST to inspect the PDF and find the exact old text/date/name.\n"
                 "3. Once you have the old text, you MUST use 'replace_text_in_pdf' to perform the change.\n"
-                "4. NEVER use 'apply_pdf_edits' for changing text, names, or dates. It is for page operations only."
+                "4. Use 'merge_pdfs', 'split_pdf', 'rotate_pdf_pages', or 'remove_pdf_pages' for page-level operations."
             )
         }
     ]
@@ -48,7 +55,7 @@ def run_agent(prompt: str, filepath: str) -> str:
             'type': 'function',
             'function': {
                 'name': 'replace_text_in_pdf',
-                'description': 'MANDATORY: You MUST use this tool to change, replace, or update ANY text, names, dates, or numbers in the PDF. DO NOT use apply_pdf_edits for text changes.',
+                'description': 'MANDATORY: You MUST use this tool to change, replace, or update ANY text, names, dates, or numbers in the PDF.',
                 'parameters': {
                     'type': 'object',
                     'properties': {
@@ -65,15 +72,65 @@ def run_agent(prompt: str, filepath: str) -> str:
         {
             'type': 'function',
             'function': {
-                'name': 'apply_pdf_edits',
-                'description': 'Use this ONLY for page-level operations like merging, splitting, or rotating. WARNING: This tool CANNOT change text, dates, or names.',
+                'name': 'merge_pdfs',
+                'description': 'Merges multiple PDF files into a single PDF.',
                 'parameters': {
                     'type': 'object',
                     'properties': {
-                        'filepath': {'type': 'string', 'description': 'The path to the PDF file to edit.'},
-                        'edit_instructions': {'type': 'string', 'description': 'Natural language instructions for what needs to be edited.'}
+                        'filepaths': {
+                            'type': 'array', 
+                            'items': {'type': 'string'},
+                            'description': 'List of paths to PDF files to merge.'
+                        },
+                        'output_filename': {'type': 'string', 'description': 'Name for the resulting merged PDF.'}
                     },
-                    'required': ['filepath', 'edit_instructions']
+                    'required': ['filepaths', 'output_filename']
+                }
+            }
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'split_pdf',
+                'description': 'Splits a PDF by extracting specific page ranges into a new file.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'filepath': {'type': 'string', 'description': 'Path to the PDF file.'},
+                        'page_ranges': {'type': 'string', 'description': "String representing page ranges (e.g., '1-3, 5, 8-10')."}
+                    },
+                    'required': ['filepath', 'page_ranges']
+                }
+            }
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'rotate_pdf_pages',
+                'description': 'Rotates specific pages in a PDF.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'filepath': {'type': 'string', 'description': 'Path to the PDF file.'},
+                        'page_ranges': {'type': 'string', 'description': "String representing page ranges (e.g., '1-3, 5'). Use 'all' for all pages."},
+                        'rotation': {'type': 'integer', 'description': 'Degrees to rotate (multiple of 90, e.g., 90, 180, 270).'}
+                    },
+                    'required': ['filepath', 'page_ranges', 'rotation']
+                }
+            }
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'remove_pdf_pages',
+                'description': 'Removes specific pages from a PDF.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'filepath': {'type': 'string', 'description': 'Path to the PDF file.'},
+                        'page_ranges': {'type': 'string', 'description': "String representing page ranges to REMOVE (e.g., '2, 4-6')."}
+                    },
+                    'required': ['filepath', 'page_ranges']
                 }
             }
         }
@@ -82,7 +139,10 @@ def run_agent(prompt: str, filepath: str) -> str:
     available_functions = {
         'get_pdf_metadata': get_pdf_metadata,
         'replace_text_in_pdf': replace_text_in_pdf,
-        'apply_pdf_edits': apply_pdf_edits,
+        'merge_pdfs': merge_pdfs,
+        'split_pdf': split_pdf,
+        'rotate_pdf_pages': rotate_pdf_pages,
+        'remove_pdf_pages': remove_pdf_pages,
     }
     
     try:

@@ -28,9 +28,9 @@ The core goal is to eliminate all external system requirements (Docker, Ollama b
 
 ### Phase 2: PDF Engine Refactor (Moving away from Stirling-PDF)
 **Goal:** Eliminate the need for Docker and the Stirling-PDF backend.
-1.  **Audit Tools:** Review `apply_pdf_edits` in `tools.py`.
-2.  **Native Implementation:** Rewrite any high-level operations (merge, split, OCR) currently sent to `http://localhost:5001` to use native `PyMuPDF` or other pure-Python libraries.
-3.  *Test:* Verify that `tools.py` can execute all required PDF edits entirely locally.
+1.  [x] **Audit Tools:** Review `apply_pdf_edits` in `tools.py`.
+2.  [x] **Native Implementation:** Rewrite any high-level operations (merge, split, OCR) currently sent to `http://localhost:5001` to use native `PyMuPDF` or other pure-Python libraries.
+3.  [x] *Test:* Verify that `tools.py` can execute all required PDF edits entirely locally.
 
 ### Phase 3: The API Sidecar (FastAPI)
 **Goal:** Wrap the Python logic into a local web server that the UI can communicate with.

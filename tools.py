@@ -1,9 +1,7 @@
 import fitz  # PyMuPDF
-import requests
 import json
 import os
-
-STIRLING_BASE_URL = "http://localhost:5001"
+import re
 
 def get_pdf_metadata(filepath: str) -> str:
     """Inspects the PDF (page count, text) to understand context before editing."""
@@ -51,10 +49,6 @@ def replace_text_in_pdf(filepath: str, old_text: str, new_text: str, fontname: s
                 continue
                 
             for inst in instances:
-                # Project Guidelines: Preserve "BILL TO" section
-                # If we are near Zenn Agents AI Oy (y coordinate usually header/body), we must be careful.
-                # Just to be safe, don't overlap with x=300 to 500, y=300 to 400? The rules say "never overlap".
-                
                 # Project Guidelines: Redaction strategy requires 1-2 pixels padding
                 redact_rect = fitz.Rect(inst.x0 - 2, inst.y0 - 2, inst.x1 + 2, inst.y1 + 2)
                 page.add_redact_annot(redact_rect, fill=(1, 1, 1))
@@ -68,8 +62,12 @@ def replace_text_in_pdf(filepath: str, old_text: str, new_text: str, fontname: s
                 changes_made += 1
                 
         if changes_made > 0:
-            # Save to the new directory
-            new_dir = os.path.join(os.path.dirname(filepath), "..", "new")
+            # Save to the 'new' directory relative to the file
+            base_dir = os.path.dirname(filepath)
+            if os.path.basename(base_dir) == "new":
+                new_dir = base_dir
+            else:
+                new_dir = os.path.join(base_dir, "new")
             os.makedirs(new_dir, exist_ok=True)
             filename = os.path.basename(filepath)
             new_filepath = os.path.normpath(os.path.join(new_dir, filename))
@@ -84,88 +82,171 @@ def replace_text_in_pdf(filepath: str, old_text: str, new_text: str, fontname: s
     except Exception as e:
         return f"Error replacing text in PDF: {str(e)}"
 
-def apply_pdf_edits(filepath: str, edit_instructions: str) -> str:
-    """Submits edit commands to the Stirling backend to generate the modified PDF.
+def _parse_page_ranges(range_str: str, max_pages: int) -> list[int]:
+    """Parses strings like '1-3, 5, 7-10' into a list of 0-based page indices."""
+    pages = []
+    parts = [p.strip() for p in range_str.split(",")]
+    for part in parts:
+        if "-" in part:
+            start, end = part.split("-")
+            # Convert 1-based to 0-based
+            s = int(start) - 1
+            e = int(end)
+            pages.extend(range(s, min(e, max_pages)))
+        else:
+            pages.append(int(part) - 1)
+    # Remove duplicates and sort, ensuring within bounds
+    return sorted(list(set([p for p in pages if 0 <= p < max_pages])))
+
+def merge_pdfs(filepaths: list[str], output_filename: str) -> str:
+    """Merges multiple PDF files into a single PDF.
     
     Args:
-        filepath: The path to the PDF file to edit.
-        edit_instructions: Natural language instructions for what needs to be edited.
+        filepaths: List of paths to PDF files to merge.
+        output_filename: Name for the resulting merged PDF.
+    """
+    try:
+        result_doc = fitz.open()
+        for path in filepaths:
+            if not os.path.exists(path):
+                return f"Error: File not found at {path}"
+            src_doc = fitz.open(path)
+            result_doc.insert_pdf(src_doc)
+            src_doc.close()
+            
+        base_dir = os.path.dirname(filepaths[0])
+        if os.path.basename(base_dir) == "new":
+            new_dir = base_dir
+        else:
+            new_dir = os.path.join(base_dir, "new")
+        os.makedirs(new_dir, exist_ok=True)
+        output_path = os.path.join(new_dir, output_filename)
+        
+        result_doc.save(output_path)
+        result_doc.close()
+        return f"Success: Merged {len(filepaths)} files into {output_path}"
+    except Exception as e:
+        return f"Error merging PDFs: {str(e)}"
+
+def split_pdf(filepath: str, page_ranges: str) -> str:
+    """Splits a PDF by extracting specific page ranges into a new file.
+    
+    Args:
+        filepath: Path to the PDF file.
+        page_ranges: String representing page ranges (e.g., '1-3, 5, 8-10').
     """
     try:
         if not os.path.exists(filepath):
             return f"Error: File not found at {filepath}"
             
-        url = f"{STIRLING_BASE_URL}/api/v1/orchestrator"
+        doc = fitz.open(filepath)
+        page_indices = _parse_page_ranges(page_ranges, doc.page_count)
         
-        # Open PDF to extract text for artifacts
-        pdf_text_pages = []
-        try:
-            doc = fitz.open(filepath)
-            page_count = doc.page_count
-            for i in range(page_count):
-                text = doc[i].get_text()
-                if text:
-                    pdf_text_pages.append({"pageNumber": i, "text": text})
-            doc.close()
-        except Exception:
-            page_count = 0
+        if not page_indices:
+            return f"Error: Invalid page ranges '{page_ranges}' for file with {doc.page_count} pages."
             
-        payload = {
-            "userMessage": edit_instructions,
-            "files": [
-                {
-                    "id": "file-1",
-                    "name": os.path.basename(filepath)
-                }
-            ],
-            "conversationHistory": [],
-            "artifacts": [
-                {
-                    "kind": "extracted_text",
-                    "files": [
-                        {
-                            "fileName": os.path.basename(filepath),
-                            "pages": pdf_text_pages
-                        }
-                    ]
-                }
-            ],
-            "enabledEndpoints": [
-                "/api/v1/convert/cbr/pdf", "/api/v1/convert/cbz/pdf", "/api/v1/convert/ebook/pdf",
-                "/api/v1/convert/eml/pdf", "/api/v1/convert/html/pdf", "/api/v1/convert/img/pdf",
-                "/api/v1/convert/pdf/cbr", "/api/v1/convert/pdf/cbz", "/api/v1/convert/pdf/csv",
-                "/api/v1/convert/pdf/epub", "/api/v1/convert/pdf/img", "/api/v1/convert/pdf/pdfa",
-                "/api/v1/convert/pdf/presentation", "/api/v1/convert/pdf/text", "/api/v1/convert/pdf/text-editor",
-                "/api/v1/convert/pdf/vector", "/api/v1/convert/pdf/word", "/api/v1/convert/pdf/xlsx",
-                "/api/v1/convert/svg/pdf", "/api/v1/convert/url/pdf", "/api/v1/convert/vector/pdf",
-                "/api/v1/general/booklet-imposition", "/api/v1/general/crop", "/api/v1/general/edit-table-of-contents",
-                "/api/v1/general/merge-pdfs", "/api/v1/general/multi-page-layout", "/api/v1/general/overlay-pdfs",
-                "/api/v1/general/rearrange-pages", "/api/v1/general/remove-pages", "/api/v1/general/rotate-pdf",
-                "/api/v1/general/scale-pages", "/api/v1/general/split-by-size-or-count", "/api/v1/general/split-for-poster-print",
-                "/api/v1/general/split-pages", "/api/v1/general/split-pdf-by-chapters", "/api/v1/general/split-pdf-by-sections",
-                "/api/v1/misc/add-attachments", "/api/v1/misc/add-comments", "/api/v1/misc/add-image",
-                "/api/v1/misc/add-page-numbers", "/api/v1/misc/add-stamp", "/api/v1/misc/auto-rename",
-                "/api/v1/misc/auto-split-pdf", "/api/v1/misc/compress-pdf", "/api/v1/misc/delete-attachment",
-                "/api/v1/misc/extract-image-scans", "/api/v1/misc/extract-images", "/api/v1/misc/flatten",
-                "/api/v1/misc/ocr-pdf", "/api/v1/misc/remove-blanks", "/api/v1/misc/rename-attachment",
-                "/api/v1/misc/replace-invert-pdf", "/api/v1/misc/scanner-effect", "/api/v1/misc/update-metadata",
-                "/api/v1/security/add-password", "/api/v1/security/add-watermark", "/api/v1/security/auto-redact",
-                "/api/v1/security/cert-sign", "/api/v1/security/cert-sign/sessions", "/api/v1/security/cert-sign/validate-certificate",
-                "/api/v1/security/redact", "/api/v1/security/remove-password", "/api/v1/security/sanitize-pdf",
-                "/api/v1/security/timestamp-pdf"
-            ]
-        }
+        # Select keeps only the specified pages in the current document
+        doc.select(page_indices)
         
-        response = requests.post(url, json=payload)
-        
-        print(f"DEBUG: Sent to Stirling API: {json.dumps(payload)}")
-        print(f"DEBUG: Received from Stirling API [{response.status_code}]: {response.text}")
-        
-        if response.status_code == 200:
-            return f"Successfully applied edits. Backend response: {response.text}"
+        base_dir = os.path.dirname(filepath)
+        if os.path.basename(base_dir) == "new":
+            new_dir = base_dir
         else:
-            return f"Error from Stirling API: {response.status_code} - {response.text}"
-    except requests.exceptions.RequestException as e:
-        return f"Network error contacting Stirling API: {str(e)}"
+            new_dir = os.path.join(base_dir, "new")
+            
+        os.makedirs(new_dir, exist_ok=True)
+        filename = f"split_{os.path.basename(filepath)}"
+        output_path = os.path.join(new_dir, filename)
+        
+        doc.save(output_path)
+        doc.close()
+        
+        return f"Success: Extracted pages {page_ranges} to {output_path}"
     except Exception as e:
-        return f"Error applying PDF edits: {str(e)}"
+        return f"Error splitting PDF: {str(e)}"
+
+def rotate_pdf_pages(filepath: str, page_ranges: str, rotation: int) -> str:
+    """Rotates specific pages in a PDF.
+    
+    Args:
+        filepath: Path to the PDF file.
+        page_ranges: String representing page ranges (e.g., '1-3, 5'). Use 'all' for all pages.
+        rotation: Degrees to rotate (must be a multiple of 90, e.g., 90, 180, 270).
+    """
+    try:
+        if not os.path.exists(filepath):
+            return f"Error: File not found at {filepath}"
+            
+        if rotation % 90 != 0:
+            return "Error: Rotation must be a multiple of 90 degrees."
+            
+        doc = fitz.open(filepath)
+        if page_ranges.lower() == 'all':
+            page_indices = list(range(doc.page_count))
+        else:
+            page_indices = _parse_page_ranges(page_ranges, doc.page_count)
+            
+        for idx in page_indices:
+            page = doc[idx]
+            current_rot = page.rotation
+            page.set_rotation((current_rot + rotation) % 360)
+            
+        base_dir = os.path.dirname(filepath)
+        if os.path.basename(base_dir) == "new":
+            new_dir = base_dir
+        else:
+            new_dir = os.path.join(base_dir, "new")
+        os.makedirs(new_dir, exist_ok=True)
+        output_path = os.path.join(new_dir, os.path.basename(filepath))
+        
+        doc.save(output_path)
+        doc.close()
+        
+        return f"Success: Rotated pages {page_ranges} by {rotation} degrees. Saved to {output_path}"
+    except Exception as e:
+        return f"Error rotating PDF pages: {str(e)}"
+
+def remove_pdf_pages(filepath: str, page_ranges: str) -> str:
+    """Removes specific pages from a PDF.
+    
+    Args:
+        filepath: Path to the PDF file.
+        page_ranges: String representing page ranges to REMOVE (e.g., '2, 4-6').
+    """
+    try:
+        if not os.path.exists(filepath):
+            return f"Error: File not found at {filepath}"
+            
+        doc = fitz.open(filepath)
+        page_indices = _parse_page_ranges(page_ranges, doc.page_count)
+        
+        if not page_indices:
+            return f"Error: Invalid page ranges '{page_ranges}'."
+            
+        # We need to delete from end to start to avoid index shifts
+        for idx in reversed(page_indices):
+            doc.delete_page(idx)
+            
+        base_dir = os.path.dirname(filepath)
+        if os.path.basename(base_dir) == "new":
+            new_dir = base_dir
+        else:
+            new_dir = os.path.join(base_dir, "new")
+        os.makedirs(new_dir, exist_ok=True)
+        output_path = os.path.join(new_dir, os.path.basename(filepath))
+        
+        doc.save(output_path)
+        doc.close()
+        
+        return f"Success: Removed pages {page_ranges}. Saved to {output_path}"
+    except Exception as e:
+        return f"Error removing PDF pages: {str(e)}"
+
+def apply_pdf_edits(filepath: str, edit_instructions: str) -> str:
+    """DEPRECATED: Use granular tools (merge, split, rotate, remove) instead.
+    Formerly used Stirling-PDF backend. Now returns a message suggesting specific tools.
+    """
+    return (
+        "Error: 'apply_pdf_edits' is deprecated and Stirling-PDF is no longer supported. "
+        "Please use granular tools like 'merge_pdfs', 'split_pdf', 'rotate_pdf_pages', or 'remove_pdf_pages' instead."
+    )
