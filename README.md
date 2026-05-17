@@ -13,9 +13,10 @@ python main.py "change the date to 15 August 2026" "original/invoice.pdf"
 For detailed implementation notes, troubleshooting, and advanced usage, see the [**PDF Agent Guide**](docs/AGENT_GUIDE.md).
 
 ## Prerequisites
-- **Python 3.14+**
-- **Stirling-PDF**: Required for the AI Agent (running locally at `http://localhost:5001`).
-- **Google Gemini API Key**: Set in a `.env` file as `GEMINI_API_KEY`.
+- **Python 3.10+**
+- **Ollama**: Required for running local LLMs (e.g., Gemma 2).
+- **Google Gemini API Key**: Optional (if using Gemini instead of local models).
+- **Tesseract-OCR**: Optional (required only for the `ocr_pdf` tool). On macOS: `brew install tesseract`.
 
 ## Setup Instructions
 

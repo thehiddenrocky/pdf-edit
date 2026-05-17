@@ -3,7 +3,15 @@ import json
 from dotenv import load_dotenv
 from llama_cpp import Llama
 from model_downloader import get_model_path
-from tools import get_pdf_metadata, apply_pdf_edits, replace_text_in_pdf
+from tools import (
+    get_pdf_metadata, 
+    replace_text_in_pdf, 
+    merge_pdfs, 
+    split_pdf, 
+    rotate_pdf_pages, 
+    remove_pdf_pages,
+    ocr_pdf
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -36,8 +44,8 @@ def run_agent(prompt: str, filepath: str) -> str:
                 "2. You MUST use 'get_pdf_metadata' FIRST to inspect the PDF and find the exact old text/date/name.\n"
                 "3. Once you receive the tool's response, read it carefully. DO NOT call the same tool again if you already have the answer.\n"
                 "4. Once you have the old text from the metadata, you MUST use 'replace_text_in_pdf' to perform the change.\n"
-                "5. NEVER use 'apply_pdf_edits' for changing text, names, or dates. It is for page operations only.\n"
-                "6. IMPORTANT: Once 'replace_text_in_pdf' returns a 'Success' message, YOUR JOB IS DONE. Do NOT call any more tools. Immediately return a final response to the user containing the path to the new file."
+                "5. Use 'merge_pdfs', 'split_pdf', 'rotate_pdf_pages', 'remove_pdf_pages', or 'ocr_pdf' for specialized page-level operations.\n"
+                "6. IMPORTANT: Once a tool returns a 'Success' message that fulfills the user request, YOUR JOB IS DONE. Do NOT call any more tools. Immediately return a final response to the user containing the path to the new file."
             )
         }
     ]
@@ -62,7 +70,7 @@ def run_agent(prompt: str, filepath: str) -> str:
             'type': 'function',
             'function': {
                 'name': 'replace_text_in_pdf',
-                'description': 'MANDATORY: You MUST use this tool to change, replace, or update ANY text, names, dates, or numbers in the PDF. DO NOT use apply_pdf_edits for text changes.',
+                'description': 'MANDATORY: You MUST use this tool to change, replace, or update ANY text, names, dates, or numbers in the PDF.',
                 'parameters': {
                     'type': 'object',
                     'properties': {
@@ -79,15 +87,80 @@ def run_agent(prompt: str, filepath: str) -> str:
         {
             'type': 'function',
             'function': {
-                'name': 'apply_pdf_edits',
-                'description': 'Use this ONLY for page-level operations like merging, splitting, or rotating. WARNING: This tool CANNOT change text, dates, or names.',
+                'name': 'merge_pdfs',
+                'description': 'Merges multiple PDF files into a single PDF.',
                 'parameters': {
                     'type': 'object',
                     'properties': {
-                        'filepath': {'type': 'string', 'description': 'The path to the PDF file to edit.'},
-                        'edit_instructions': {'type': 'string', 'description': 'Natural language instructions for what needs to be edited.'}
+                        'filepaths': {
+                            'type': 'array', 
+                            'items': {'type': 'string'},
+                            'description': 'List of paths to PDF files to merge.'
+                        },
+                        'output_filename': {'type': 'string', 'description': 'Name for the resulting merged PDF.'}
                     },
-                    'required': ['filepath', 'edit_instructions']
+                    'required': ['filepaths', 'output_filename']
+                }
+            }
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'split_pdf',
+                'description': 'Splits a PDF by extracting specific page ranges into a new file.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'filepath': {'type': 'string', 'description': 'Path to the PDF file.'},
+                        'page_ranges': {'type': 'string', 'description': "String representing page ranges (e.g., '1-3, 5, 8-10')."}
+                    },
+                    'required': ['filepath', 'page_ranges']
+                }
+            }
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'rotate_pdf_pages',
+                'description': 'Rotates specific pages in a PDF.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'filepath': {'type': 'string', 'description': 'Path to the PDF file.'},
+                        'page_ranges': {'type': 'string', 'description': "String representing page ranges (e.g., '1-3, 5'). Use 'all' for all pages."},
+                        'rotation': {'type': 'integer', 'description': 'Degrees to rotate (multiple of 90, e.g., 90, 180, 270).'}
+                    },
+                    'required': ['filepath', 'page_ranges', 'rotation']
+                }
+            }
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'remove_pdf_pages',
+                'description': 'Removes specific pages from a PDF.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'filepath': {'type': 'string', 'description': 'Path to the PDF file.'},
+                        'page_ranges': {'type': 'string', 'description': "String representing page ranges to REMOVE (e.g., '2, 4-6')."}
+                    },
+                    'required': ['filepath', 'page_ranges']
+                }
+            }
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'ocr_pdf',
+                'description': 'Performs OCR on an image-based PDF to make it searchable and editable.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'filepath': {'type': 'string', 'description': 'Path to the PDF file.'},
+                        'language': {'type': 'string', 'description': "Tesseract language code (default: 'eng')."}
+                    },
+                    'required': ['filepath']
                 }
             }
         }
@@ -96,7 +169,11 @@ def run_agent(prompt: str, filepath: str) -> str:
     available_functions = {
         'get_pdf_metadata': get_pdf_metadata,
         'replace_text_in_pdf': replace_text_in_pdf,
-        'apply_pdf_edits': apply_pdf_edits,
+        'merge_pdfs': merge_pdfs,
+        'split_pdf': split_pdf,
+        'rotate_pdf_pages': rotate_pdf_pages,
+        'remove_pdf_pages': remove_pdf_pages,
+        'ocr_pdf': ocr_pdf,
     }
     
     try:

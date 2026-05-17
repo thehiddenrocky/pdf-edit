@@ -1,6 +1,6 @@
 # Setup Guide
 
-To use the full capabilities of the PDF Editing suite, you need to set up three main components: the Python environment, a local LLM, and the Stirling-PDF backend.
+To use the full capabilities of the PDF Editing suite, you need to set up two main components: the Python environment and a local LLM.
 
 ## 1. Python Environment
 
@@ -18,8 +18,12 @@ pip install -r requirements.txt
 **Key Dependencies:**
 - `PyMuPDF (fitz)`: For low-level PDF manipulation.
 - `ollama`: For local LLM orchestration.
-- `requests`: For communicating with the Stirling-PDF API.
 - `python-dotenv`: For environment variable management.
+
+*(Optional)* **OCR Support:**
+To use the `ocr_pdf` tool, you must have Tesseract-OCR installed on your system.
+- **macOS**: `brew install tesseract`
+- **Ubuntu**: `sudo apt install tesseract-ocr`
 
 ## 2. Local LLM (Ollama)
 
@@ -32,30 +36,3 @@ The AI Agent uses **Gemma** running locally via Ollama.
    ```
    *(Note: Ensure the model name in `agent.py` matches what you have downloaded.)*
 
-## 3. Stirling-PDF Backend
-
-Stirling-PDF provides the orchestration layer for complex PDF operations.
-
-1. Ensure you have Docker installed.
-2. Run Stirling-PDF (Python AI Engine version):
-   ```bash
-   docker run -d \
-     -p 5001:5001 \
-     -e ANTHROPIC_API_KEY=your_key_here \
-     stirlingtools/stirling-pdf:latest-ai
-   ```
-   *Note: While the agent uses local Gemma for logic, the Stirling backend itself may require an API key for its internal reasoning if you use its high-level endpoints.*
-
-3. Verify it's running:
-   ```bash
-   curl http://localhost:5001/health
-   ```
-
-## 4. Configuration
-
-Create a `.env` file in the root directory:
-
-```env
-# Optional: If you use cloud-based models in Stirling
-ANTHROPIC_API_KEY=sk-...
-```
