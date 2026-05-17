@@ -39,6 +39,12 @@ def replace_text_in_pdf(filepath: str, old_text: str, new_text: str, fontname: s
         fontsize: Size of the inserted text.
     """
     try:
+        # Enforce standard PDF fonts to prevent crashes
+        allowed_fonts = ["helv", "Helvetica-Oblique", "helbo", "Times-Roman", "Courier"]
+        if fontname not in allowed_fonts:
+            print(f"Warning: Unsupported font '{fontname}' requested. Falling back to 'helv'.")
+            fontname = "helv"
+
         if not os.path.exists(filepath):
             return f"Error: File not found at {filepath}"
             
@@ -68,11 +74,12 @@ def replace_text_in_pdf(filepath: str, old_text: str, new_text: str, fontname: s
                 changes_made += 1
                 
         if changes_made > 0:
-            # Save to the new directory
-            new_dir = os.path.join(os.path.dirname(filepath), "..", "new")
+            # Save to the new directory (resolve to absolute path)
+            base_dir = os.path.abspath(os.path.dirname(filepath))
+            new_dir = os.path.join(base_dir, "new")
             os.makedirs(new_dir, exist_ok=True)
             filename = os.path.basename(filepath)
-            new_filepath = os.path.normpath(os.path.join(new_dir, filename))
+            new_filepath = os.path.abspath(os.path.join(new_dir, filename))
             
             doc.save(new_filepath)
             doc.close()
