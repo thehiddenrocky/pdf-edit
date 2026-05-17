@@ -4,25 +4,29 @@ This document summarizes the development journey of the PDF Editing Agent, the c
 
 ## Technical Issues & Troubleshooting
 
-### 1. SDK Migration (Gemini to local Gemma via Ollama)
-- **Issue**: The project originally used the `google-genai` SDK, which required a cloud API key and internet connectivity.
-- **Resolution**: Migrated to the `ollama` Python library to run the agent using a local **Gemma** model. This involved:
-    - Implementing a manual ReAct loop to handle tool calling (which Gemini's SDK handled internally).
-    - Mapping tool definitions to the JSON format expected by Ollama's `chat` API.
-    - Setting the `MODEL_NAME` to `gemma` in `agent.py`.
+### 1. SDK Migration (Gemini -> Ollama -> llama-cpp-python)
+- **Issue**: The project moved from cloud-based Gemini to local Ollama, and finally to `llama-cpp-python` for deeper integration and easier packaging in macOS apps.
+- **Resolution**: Implemented the agent using `llama-cpp-python` with Apple Metal support.
+    - **Amnesia Loop Fix**: Because the default `chatml-function-calling` template in `llama-cpp-python` ignores `role: tool`, we now append tool observations as `role: user` with a structured `OBSERVATION/THOUGHT` prefix to maintain the agent's memory.
+    - **GPU Offloading**: Set `n_gpu_layers=-1` to ensure the model runs entirely on the Mac's GPU (M-series chips).
 
 ### 2. Migration to Native PDF Tools (Eliminating Stirling-PDF)
-- **Issue**: Stirling-PDF required Docker and had complex API requirements, making it difficult for local deployment and 1-click app packaging.
-- **Resolution**: Replaced the Stirling-PDF backend with native **PyMuPDF (fitz)** implementations for all operations:
-    - **Merge**: `merge_pdfs` (Native)
-    - **Split**: `split_pdf` (Native)
-    - **Rotate/Remove**: `rotate_pdf_pages`, `remove_pdf_pages` (Native)
-    - **OCR**: `ocr_pdf` (Native via Tesseract integration)
-- **Benefit**: No more Docker dependency. The entire engine is now pure Python.
+- **Issue**: Stirling-PDF required Docker, which is a heavy dependency for a desktop app.
+- **Resolution**: Replaced the Stirling-PDF backend with native **PyMuPDF (fitz)** implementations for all operations. The engine is now 100% Python/C++ and runs entirely in-process.
+
+### 3. Finalized API Interface
+- **Issue**: To support the FastAPI sidecar and Tauri frontend, the agent needed a stable, structured return value.
+- **Resolution**: The `run_agent` function in `agent.py` now returns a **Dictionary** instead of a string:
+    ```json
+    {
+      "status": "success | error",
+      "message": "The assistant's response or error details",
+      "output_file": "path/to/modified.pdf | null"
+    }
+    ```
 
 ### 4. Ghost Text & Replacement Logic
 - **Issue**: Standard PDF editing tools often "layer" new text on top of old text, leaving "ghost" artifacts visible underneath.
-- **Troubleshooting**: PDF text isn't stored in a flow; it's positioned at coordinates. To replace it, you must "erase" the area first.
 - **Resolution**: Created a custom `replace_text_in_pdf` tool using **PyMuPDF (fitz)**.
     - It searches for text matches.
     - It creates a redaction rectangle with a **2-pixel padding** to ensure anti-aliased edges of the original text are fully covered.
@@ -35,29 +39,23 @@ This document summarizes the development journey of the PDF Editing Agent, the c
 ## How to Use the Agent
 
 ### Prerequisites
-1. **Ollama**: Ensure Ollama is installed and running locally.
-   - Pull the model: `ollama pull gemma4:e2b`
-2. **Environment**: Use the provided virtual environment.
+1. **Metal Support**: Designed for macOS (Apple Silicon).
+2. **Environment**:
    ```bash
-   source ./venv/bin/activate
    pip install -r requirements.txt
    ```
+3. **Model**: The model is automatically downloaded from HuggingFace on first run via `model_downloader.py`.
 
 ### Running Commands
 The agent is invoked via `main.py`. It takes two arguments: the **instruction** and the **input file path**.
 
-**Example: Change a name**
+**Example:**
 ```bash
-python main.py "change the name from Himanshu to Akshenndra everywhere" "original/20 Feb-Himanshu.pdf"
-```
-
-**Example: Change a date**
-```bash
-python main.py "change the invoice date to August 2026" "original/20 Feb-Himanshu.pdf"
+python main.py "change the name from Himanshu to Akshenndra" "original.pdf"
 ```
 
 ### Output
-The modified files are saved in the `new/` directory, maintaining the original filename.
+The modified files are saved in the `new/` directory. The CLI will output a structured summary including the path to the result.
 
 ## Safe Zones (GEMINI.md)
 Always remember that the "BILL TO" section (Zenn Agents AI Oy) is protected by coordinate-based filters in the underlying tools to prevent accidental modification of critical business data.

@@ -1,5 +1,7 @@
 import os
 import json
+import re
+from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 from llama_cpp import Llama
 from model_downloader import get_model_path
@@ -16,14 +18,25 @@ from tools import (
 # Load environment variables from .env file
 load_dotenv()
 
-def run_agent(prompt: str, filepath: str) -> str:
-    """Runs the ReAct loop using local Gemma via llama-cpp-python to edit the PDF."""
+def run_agent(prompt: str, filepath: str) -> Dict[str, Any]:
+    """Runs the ReAct loop using local Gemma via llama-cpp-python to edit the PDF.
+    
+    Returns:
+        A dictionary containing:
+        - status: "success" or "error"
+        - message: The assistant's final response or error details.
+        - output_file: The path to the modified PDF, if any.
+    """
     print(f"Starting agent with file: {filepath}")
     
     # Get local model path (downloads if missing)
     model_path = get_model_path()
     if not model_path:
-        return "Agent error: Could not locate or download the AI model."
+        return {
+            "status": "error",
+            "message": "Could not locate or download the AI model.",
+            "output_file": None
+        }
 
     # Instantiate Llama with Metal support (n_gpu_layers=-1)
     llm = Llama(
@@ -50,6 +63,16 @@ def run_agent(prompt: str, filepath: str) -> str:
         }
     ]
     
+    available_functions = {
+        'get_pdf_metadata': get_pdf_metadata,
+        'replace_text_in_pdf': replace_text_in_pdf,
+        'merge_pdfs': merge_pdfs,
+        'split_pdf': split_pdf,
+        'rotate_pdf_pages': rotate_pdf_pages,
+        'remove_pdf_pages': remove_pdf_pages,
+        'ocr_pdf': ocr_pdf,
+    }
+
     # Define tools in OpenAI-compatible format
     tools = [
         {
@@ -166,16 +189,8 @@ def run_agent(prompt: str, filepath: str) -> str:
         }
     ]
     
-    available_functions = {
-        'get_pdf_metadata': get_pdf_metadata,
-        'replace_text_in_pdf': replace_text_in_pdf,
-        'merge_pdfs': merge_pdfs,
-        'split_pdf': split_pdf,
-        'rotate_pdf_pages': rotate_pdf_pages,
-        'remove_pdf_pages': remove_pdf_pages,
-        'ocr_pdf': ocr_pdf,
-    }
-    
+    last_output_file = None
+
     try:
         # ReAct loop: Limit to 10 iterations to prevent infinite loops
         for i in range(10):
@@ -195,8 +210,11 @@ def run_agent(prompt: str, filepath: str) -> str:
             )
             
             if not response or 'choices' not in response or len(response['choices']) == 0:
-                print(f"Error: AI returned empty response: {response}")
-                return "Agent error: AI returned empty response."
+                return {
+                    "status": "error",
+                    "message": "AI returned empty response.",
+                    "output_file": None
+                }
 
             assistant_message = response['choices'][0]['message']
             
@@ -205,7 +223,20 @@ def run_agent(prompt: str, filepath: str) -> str:
             
             # If there's no tool call, we're done
             if not assistant_message.get('tool_calls'):
-                return assistant_message.get('content', 'Agent finished execution.')
+                content = assistant_message.get('content', 'Agent finished execution.')
+                
+                # Final check: If assistant message mentions a path but tool didn't capture it perfectly,
+                # we try one last regex on the assistant's final text.
+                if not last_output_file:
+                    match = re.search(r'(?:Saved to|at)\s+([^\s]+\.pdf)', content)
+                    if match:
+                        last_output_file = os.path.normpath(match.group(1))
+
+                return {
+                    "status": "success",
+                    "message": content,
+                    "output_file": last_output_file
+                }
             
             # Process tool calls
             for tool in assistant_message['tool_calls']:
@@ -219,7 +250,15 @@ def run_agent(prompt: str, filepath: str) -> str:
                 
                 if function_name in available_functions:
                     result = available_functions[function_name](**function_args)
-                    content_str = json.dumps(result) if isinstance(result, (dict, list)) else str(result)
+                    content_str = str(result)
+                    
+                    # Try to extract a filepath from success messages
+                    if "Success" in content_str and ".pdf" in content_str:
+                        # Common pattern: "Saved to path/to/file.pdf"
+                        match = re.search(r'(?:to|at)\s+([^\s]+\.pdf)', content_str)
+                        if match:
+                            last_output_file = os.path.normpath(match.group(1))
+
                     # Use 'user' role but wrap in a clear Observation/Thought structure to force the AI to respond.
                     messages.append({
                         'role': 'user',
@@ -231,7 +270,15 @@ def run_agent(prompt: str, filepath: str) -> str:
                         'content': f"Tool Error: Tool '{function_name}' not found."
                     })
         
-        return "Agent stopped: Max iterations (10) reached."
+        return {
+            "status": "error",
+            "message": "Max iterations (10) reached.",
+            "output_file": last_output_file
+        }
                     
     except Exception as e:
-        return f"Agent error: {str(e)}"
+        return {
+            "status": "error",
+            "message": str(e),
+            "output_file": last_output_file
+        }

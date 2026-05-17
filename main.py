@@ -1,4 +1,5 @@
 import argparse
+import json
 from agent import run_agent
 
 def main():
@@ -11,8 +12,14 @@ def main():
     print(f"User prompt: {args.prompt}")
     result = run_agent(args.prompt, args.filepath)
     
-    print("\n--- Agent Response ---")
-    print(result)
+    print("\n" + "="*30)
+    print("      AGENT RESPONSE")
+    print("="*30)
+    print(f"Status:      {result['status'].upper()}")
+    print(f"Output File: {result['output_file']}")
+    print("-" * 30)
+    print(f"Message:\n{result['message']}")
+    print("="*30)
 
 if __name__ == "__main__":
     main()
