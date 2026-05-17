@@ -7,7 +7,8 @@ from tools import (
     merge_pdfs, 
     split_pdf, 
     rotate_pdf_pages, 
-    remove_pdf_pages
+    remove_pdf_pages,
+    ocr_pdf
 )
 
 # Load environment variables from .env file
@@ -30,7 +31,7 @@ def run_agent(prompt: str, filepath: str) -> str:
                 "1. You CANNOT change text without knowing the exact existing text currently in the PDF.\n"
                 "2. You MUST use 'get_pdf_metadata' FIRST to inspect the PDF and find the exact old text/date/name.\n"
                 "3. Once you have the old text, you MUST use 'replace_text_in_pdf' to perform the change.\n"
-                "4. Use 'merge_pdfs', 'split_pdf', 'rotate_pdf_pages', or 'remove_pdf_pages' for page-level operations."
+                "4. Use 'merge_pdfs', 'split_pdf', 'rotate_pdf_pages', 'remove_pdf_pages', or 'ocr_pdf' for specialized operations."
             )
         }
     ]
@@ -133,6 +134,21 @@ def run_agent(prompt: str, filepath: str) -> str:
                     'required': ['filepath', 'page_ranges']
                 }
             }
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'ocr_pdf',
+                'description': 'Performs OCR on an image-based PDF to make it searchable and editable.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'filepath': {'type': 'string', 'description': 'Path to the PDF file.'},
+                        'language': {'type': 'string', 'description': "Tesseract language code (default: 'eng')."}
+                    },
+                    'required': ['filepath']
+                }
+            }
         }
     ]
     
@@ -143,6 +159,7 @@ def run_agent(prompt: str, filepath: str) -> str:
         'split_pdf': split_pdf,
         'rotate_pdf_pages': rotate_pdf_pages,
         'remove_pdf_pages': remove_pdf_pages,
+        'ocr_pdf': ocr_pdf,
     }
     
     try:

@@ -1,11 +1,26 @@
 import fitz
-doc = fitz.open("20 Feb-Himanshu.pdf")
+import sys
+import os
+
+# Use provided file or default to the resume
+filename = sys.argv[1] if len(sys.argv) > 1 else "Akshenndra- Garg Resume 2025.pdf"
+
+if not os.path.exists(filename):
+    print(f"Error: File '{filename}' not found.")
+    sys.exit(1)
+
+doc = fitz.open(filename)
 page = doc[0]
 
-print("Matches for 'Himanshu':")
-for r in page.search_for("Himanshu"):
-    print(r)
+# Common things to search for
+search_terms = ["Akshenndra", "Garg", "Education", "Experience"]
 
-print("\nMatches for 'Account Name:':")
-for r in page.search_for("Account Name:"):
-    print(r)
+for term in search_terms:
+    print(f"\nMatches for '{term}':")
+    instances = page.search_for(term)
+    if not instances:
+        print("  None found.")
+    for r in instances:
+        print(f"  {r}")
+
+doc.close()

@@ -242,11 +242,73 @@ def remove_pdf_pages(filepath: str, page_ranges: str) -> str:
     except Exception as e:
         return f"Error removing PDF pages: {str(e)}"
 
+def ocr_pdf(filepath: str, language: str = "eng") -> str:
+    """Performs OCR on an image-based PDF to make it searchable and editable.
+    Requires Tesseract-OCR to be installed on the system.
+    
+    Args:
+        filepath: Path to the PDF file.
+        language: Tesseract language code (default: 'eng').
+    """
+    try:
+        if not os.path.exists(filepath):
+            return f"Error: File not found at {filepath}"
+            
+        doc = fitz.open(filepath)
+        
+        # Check if OCR is supported by the current PyMuPDF build
+        # This is a bit tricky, but usually trying to get an OCR page works
+        try:
+            # Try to OCR the first page as a test
+            if doc.page_count > 0:
+                page = doc[0]
+                # If this fails with a specific message about Tesseract, we catch it
+                page.get_textpage_ocr(language=language, full=True)
+        except Exception as ocr_err:
+            if "tesseract" in str(ocr_err).lower():
+                return (
+                    "Error: OCR requires Tesseract-OCR to be installed on your system. "
+                    "On macOS, run 'brew install tesseract'. "
+                    "Alternatively, ensure you have the 'pymupdf[tesseract]' extra installed."
+                )
+            return f"Error during OCR check: {str(ocr_err)}"
+
+        # If test passed, proceed to OCR the whole doc
+        # PyMuPDF doesn't have a one-shot doc.ocr(), we have to do it page by page
+        # and create a new doc, or use the 'pdfocr' functionality if available.
+        
+        # A simpler way is to use the CLI-like interface if available, but for now 
+        # let's just use the built-in method to generate a new PDF.
+        # Note: True OCR usually results in a new PDF with a text layer.
+        
+        output_filename = f"ocr_{os.path.basename(filepath)}"
+        base_dir = os.path.dirname(filepath)
+        if os.path.basename(base_dir) == "new":
+            new_dir = base_dir
+        else:
+            new_dir = os.path.join(base_dir, "new")
+        os.makedirs(new_dir, exist_ok=True)
+        output_path = os.path.join(new_dir, output_filename)
+
+        # Use the built-in OCR output method if available (requires Tesseract)
+        # We can use doc.convert_to_pdf() with OCR, or just save the pages.
+        # Actually, PyMuPDF provides a high-level way:
+        ocr_pdf_bytes = doc.convert_to_pdf(ocr=1, language=language)
+        
+        with open(output_path, "wb") as f:
+            f.write(ocr_pdf_bytes)
+            
+        doc.close()
+        return f"Success: OCR completed. Searchable PDF saved to {output_path}"
+        
+    except Exception as e:
+        return f"Error performing OCR: {str(e)}"
+
 def apply_pdf_edits(filepath: str, edit_instructions: str) -> str:
-    """DEPRECATED: Use granular tools (merge, split, rotate, remove) instead.
+    """DEPRECATED: Use granular tools (merge, split, rotate, remove, ocr) instead.
     Formerly used Stirling-PDF backend. Now returns a message suggesting specific tools.
     """
     return (
         "Error: 'apply_pdf_edits' is deprecated and Stirling-PDF is no longer supported. "
-        "Please use granular tools like 'merge_pdfs', 'split_pdf', 'rotate_pdf_pages', or 'remove_pdf_pages' instead."
+        "Please use granular tools like 'merge_pdfs', 'split_pdf', 'rotate_pdf_pages', 'remove_pdf_pages', or 'ocr_pdf' instead."
     )

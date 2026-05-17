@@ -11,36 +11,33 @@ This document summarizes the development journey of the PDF Editing Agent, the c
     - Mapping tool definitions to the JSON format expected by Ollama's `chat` API.
     - Setting the `MODEL_NAME` to `gemma` in `agent.py`.
 
-### 2. Stirling-PDF API Schema Fixes (422 Errors)
-- **Issue**: Calls to the Stirling-PDF Orchestrator returned `422 Unprocessable Entity`.
-- **Troubleshooting**: Inspected the Pydantic error logs. Discovered Stirling's API rejects the `pageCount` field inside the `files` array when sent as input, despite their own metadata tools returning it.
-- **Resolution**: Modified `tools.py` to explicitly strip `pageCount` from the file metadata before sending the payload.
-
-### 3. Stirling-PDF "Outcome: cannot_do"
-- **Issue**: The agent API would return success but with a `cannot_do` outcome, indicating it didn't know how to proceed.
-- **Troubleshooting**: Realized the `enabledEndpoints` list was empty. The Stirling orchestrator requires a whitelist of tools it is allowed to invoke.
-- **Resolution**: Hardcoded a set of valid Stirling endpoints (e.g., `add-text`, `add-image`, `set-metadata`) in the request payload.
+### 2. Migration to Native PDF Tools (Eliminating Stirling-PDF)
+- **Issue**: Stirling-PDF required Docker and had complex API requirements, making it difficult for local deployment and 1-click app packaging.
+- **Resolution**: Replaced the Stirling-PDF backend with native **PyMuPDF (fitz)** implementations for all operations:
+    - **Merge**: `merge_pdfs` (Native)
+    - **Split**: `split_pdf` (Native)
+    - **Rotate/Remove**: `rotate_pdf_pages`, `remove_pdf_pages` (Native)
+    - **OCR**: `ocr_pdf` (Native via Tesseract integration)
+- **Benefit**: No more Docker dependency. The entire engine is now pure Python.
 
 ### 4. Ghost Text & Replacement Logic
-- **Issue**: Standard PDF editing tools often "layer" new text on top of old text, leaving "ghost" artifacts visible underneath. Additionally, Stirling's native API lacked a robust "search and replace" function.
+- **Issue**: Standard PDF editing tools often "layer" new text on top of old text, leaving "ghost" artifacts visible underneath.
 - **Troubleshooting**: PDF text isn't stored in a flow; it's positioned at coordinates. To replace it, you must "erase" the area first.
 - **Resolution**: Created a custom `replace_text_in_pdf` tool using **PyMuPDF (fitz)**.
     - It searches for text matches.
     - It creates a redaction rectangle with a **2-pixel padding** to ensure anti-aliased edges of the original text are fully covered.
     - It applies the redaction (white fill) and then draws the new text at the same baseline.
 
-### 5. Efficient Context Passing (Artifacts)
+### 5. Efficient Context Passing
 - **Issue**: The agent would often enter a loop of asking "what is in the PDF?" because it didn't have the text content immediately.
-- **Troubleshooting**: Stirling supports an `artifacts` field in the payload to provide pre-extracted data.
-- **Resolution**: Integrated PyMuPDF text extraction directly into the `apply_pdf_edits` tool. Every request now sends the PDF's text content as an "extracted_text" artifact, allowing the LLM to make decisions in a single turn.
+- **Resolution**: Integrated `get_pdf_metadata` tool that extracts the first 500 characters and page count automatically. The agent is instructed to call this tool first.
 
 ## How to Use the Agent
 
 ### Prerequisites
 1. **Ollama**: Ensure Ollama is installed and running locally.
-   - Pull the model: `ollama pull gemma`
-2. **Stirling-PDF**: Ensure Stirling-PDF is running locally (default: `http://localhost:5001`).
-3. **Environment**: Use the provided virtual environment.
+   - Pull the model: `ollama pull gemma4:e2b`
+2. **Environment**: Use the provided virtual environment.
    ```bash
    source ./venv/bin/activate
    pip install -r requirements.txt
